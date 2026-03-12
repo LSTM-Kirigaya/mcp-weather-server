@@ -1,8 +1,17 @@
+"""
+dMCP Weather Server - 基于 Dedalus MCP 规范的天气查询服务器
+
+使用中国天气网 API 提供实时天气查询服务。
+"""
+
 import requests
 import json
 from typing import NamedTuple, Optional
+from dedalus_mcp import MCPServer, tool
+
 
 class CityWeather(NamedTuple):
+    """城市天气数据结构"""
     city_name_en: str
     city_name_cn: str
     city_code: str
@@ -13,11 +22,18 @@ class CityWeather(NamedTuple):
     aqi: str
     weather: str
 
-def get_city_weather_by_city_name(city_code: str) -> Optional[CityWeather]:
-    """根据城市名获取天气信息"""
+
+def get_city_weather_by_city_code(city_code: str) -> Optional[CityWeather]:
+    """
+    根据城市代码获取天气信息
     
+    Args:
+        city_code: 中国天气网城市代码，如北京为 "101010100"
+    
+    Returns:
+        CityWeather 对象或 None（获取失败时）
+    """
     if not city_code:
-        print(f"找不到{city_code}对应的城市")
         return None
     
     try:
@@ -32,10 +48,9 @@ def get_city_weather_by_city_name(city_code: str) -> Optional[CityWeather]:
         }
         
         # 发送HTTP请求
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # 解析JSON数据
         # 解析JSON数据前先处理编码问题
         content = response.text.encode('latin1').decode('unicode_escape')
         json_start = content.find("{")
@@ -60,21 +75,42 @@ def get_city_weather_by_city_name(city_code: str) -> Optional[CityWeather]:
         print(f"获取天气信息失败: {str(e)}")
         return None
 
-from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP('weather')
+@tool(description="根据城市代码获取指定城市的实时天气信息，包括温度、天气状况、风向、风速、湿度和空气质量指数")
+def get_weather_by_city_code(city_code: int) -> str:
+    """
+    根据城市代码获取天气信息
+    
+    Args:
+        city_code: 城市代码（整数），如北京 101010100、上海 101020100
+    
+    Returns:
+        格式化的天气信息字符串
+    """
+    city_weather = get_city_weather_by_city_code(str(city_code))
+    if city_weather is None:
+        return f"错误：无法获取城市代码 {city_code} 的天气信息，请检查城市代码是否正确。"
+    
+    return (
+        f"城市：{city_weather.city_name_cn} ({city_weather.city_name_en})\n"
+        f"温度：{city_weather.temp}°C\n"
+        f"天气：{city_weather.weather}\n"
+        f"风向：{city_weather.wd}\n"
+        f"风速：{city_weather.ws}\n"
+        f"湿度：{city_weather.sd}\n"
+        f"空气质量指数(AQI)：{city_weather.aqi}"
+    )
 
-@mcp.tool(
-    name='get_weather_by_city_code',
-    description='根据城市天气预报的城市编码 (int)，获取指定城市的天气信息'
-)
-def get_weather_by_code(city_code: int) -> str:
-    """模拟天气查询协议，返回格式化字符串"""
-    city_weather = get_city_weather_by_city_name(city_code)
-    return str(city_weather)
+
+# 创建 MCP 服务器
+server = MCPServer("weather-server")
+
+# 收集/注册工具
+server.collect(get_weather_by_city_code)
 
 
 if __name__ == "__main__":
-    # 测试运行 MCP 服务器
-    print("启动天气 MCP 服务器...")
-    mcp.run()
+    import asyncio
+    print("启动 dMCP 天气服务器...")
+    print("服务器将在 http://127.0.0.1:8000/mcp 运行")
+    asyncio.run(server.serve())
