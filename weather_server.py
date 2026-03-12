@@ -4,6 +4,8 @@ dMCP Weather Server - 基于 Dedalus MCP 规范的天气查询服务器
 使用中国天气网 API 提供实时天气查询服务。
 """
 
+import os
+import sys
 import requests
 import json
 from typing import NamedTuple, Optional
@@ -72,7 +74,7 @@ def get_city_weather_by_city_code(city_code: str) -> Optional[CityWeather]:
         )
         
     except Exception as e:
-        print(f"获取天气信息失败: {str(e)}")
+        print(f"获取天气信息失败: {str(e)}", file=sys.stderr)
         return None
 
 
@@ -109,8 +111,32 @@ server = MCPServer("weather-server")
 server.collect(get_weather_by_city_code)
 
 
+async def main():
+    """主函数 - 启动 Streamable HTTP 服务器"""
+    # 从环境变量获取配置，使用默认值
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    
+    print(f"启动 dMCP 天气服务器...", file=sys.stderr)
+    print(f"服务器配置: host={host}, port={port}, path=/mcp", file=sys.stderr)
+    print(f"服务器将在 http://{host}:{port}/mcp 运行", file=sys.stderr)
+    
+    # 使用 serve_streamable_http 启动服务器
+    # 这会保持服务器运行并监听 HTTP/SSE 请求
+    await server.serve_streamable_http(
+        host=host,
+        port=port,
+        path="/mcp",
+        log_level="info"
+    )
+
+
 if __name__ == "__main__":
     import asyncio
-    print("启动 dMCP 天气服务器...")
-    print("服务器将在 http://127.0.0.1:8000/mcp 运行")
-    asyncio.run(server.serve())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n服务器已停止", file=sys.stderr)
+    except Exception as e:
+        print(f"服务器错误: {e}", file=sys.stderr)
+        sys.exit(1)
